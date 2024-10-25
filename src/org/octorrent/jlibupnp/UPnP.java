@@ -37,15 +37,15 @@ public class UPnP {
         }
     }
 
-    public boolean openPort(int port, Protocol protocol)throws IOException {
+    public boolean openPort(int port, Protocol protocol){
         return gateway.openPort(port, protocol);
     }
 
-    public boolean closePort(int port, Protocol protocol)throws IOException {
+    public boolean closePort(int port, Protocol protocol){
         return gateway.closePort(port, protocol);
     }
 
-    public boolean isMapped(int port, Protocol protocol)throws IOException {
+    public boolean isMapped(int port, Protocol protocol){
         return gateway.isMapped(port, protocol);
     }
 

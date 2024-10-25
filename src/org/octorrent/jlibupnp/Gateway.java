@@ -80,7 +80,7 @@ public class Gateway {
 
             if(deviceNode != null && deviceNode instanceof Element){
                 controlUrl = new URL(url.getProtocol(), url.getHost(), url.getPort(), ((Element) deviceNode).getElementsByTagName("controlURL").item(0).getTextContent());
-                serviceType = findNode(doc.getDocumentElement(), "device", "serviceList", "service", "serviceType").getTextContent();
+                serviceType = ((Element) deviceNode).getElementsByTagName("serviceType").item(0).getTextContent();
 
             }else{
                 throw new IOException("Required XML structure not found in device description");
@@ -92,7 +92,7 @@ public class Gateway {
         }
     }
 
-    public boolean openPort(int port, Protocol protocol)throws IOException {
+    public boolean openPort(int port, Protocol protocol){
         if(port < 1 || port > 65535){
             throw new IllegalArgumentException("Port is out of range.");
         }
@@ -107,11 +107,15 @@ public class Gateway {
         params.put("NewPortMappingDescription", "UPnP");
         params.put("NewLeaseDuration", "0");
 
-        command("AddPortMapping", params);
-        return true;
+        try{
+            command("AddPortMapping", params);
+            return true;
+        }catch(IOException e){
+            return false;
+        }
     }
 
-    public boolean closePort(int port, Protocol protocol)throws IOException {
+    public boolean closePort(int port, Protocol protocol){
         if(port < 1 || port > 65535){
             throw new IllegalArgumentException("Port is out of range.");
         }
@@ -121,11 +125,15 @@ public class Gateway {
         params.put("NewProtocol", protocol.value());
         params.put("NewExternalPort", port+"");
 
-        command("DeletePortMapping", params);
-        return true;
+        try{
+            command("DeletePortMapping", params);
+            return true;
+        }catch(IOException e){
+            return false;
+        }
     }
 
-    public boolean isMapped(int port, Protocol protocol)throws IOException {
+    public boolean isMapped(int port, Protocol protocol){
         if(port < 1 || port > 65535){
             throw new IllegalArgumentException("Port is out of range.");
         }
@@ -135,8 +143,12 @@ public class Gateway {
         params.put("NewProtocol", protocol.value());
         params.put("NewExternalPort", port+"");
 
-        Map<String, String> response = command("GetSpecificPortMappingEntry", params);
-        return response.get("NewEnabled").equals("1");
+        try{
+            Map<String, String> response = command("GetSpecificPortMappingEntry", params);
+            return response.get("NewEnabled").equals("1");
+        }catch(IOException e){
+            return false;
+        }
     }
 
     public InetAddress getExternalIP()throws IOException {
@@ -161,7 +173,9 @@ public class Gateway {
         Socket socket = new Socket(controlUrl.getHost(), controlUrl.getPort());
         OutputStream out = socket.getOutputStream();
 
-        String request = "GET "+controlUrl.getPath()+" HTTP/1.1\r\n" +
+        System.out.println(controlUrl.toString());
+
+        String request = "POST "+controlUrl.getPath()+" HTTP/1.1\r\n" +
                 "Host: "+controlUrl.getHost()+"\r\n" +
                 "Content-Type: text/xml\r\n" +
                 "SOAPAction: \""+serviceType+"#"+action+"\"\r\n" +
@@ -171,7 +185,7 @@ public class Gateway {
         out.flush();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-        StringBuilder response = new StringBuilder();
+        StringBuilder xmlResponse = new StringBuilder();
         String line;
         boolean xmlStart = false;
         while((line = reader.readLine()) != null){
@@ -181,43 +195,48 @@ public class Gateway {
             }
 
             if(xmlStart){
-                response.append(line).append("\n");
+                xmlResponse.append(line).append("\n");
             }
         }
         socket.close();
 
-        System.out.println(response);
+        try{
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document doc = builder.parse(new ByteArrayInputStream(xmlResponse.toString().getBytes(StandardCharsets.UTF_8)));
 
-        /*
-        let doc = roxmltree::Document::parse(response_str.split("\r\n\r\n").last().unwrap())
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            NodeList bodyList = doc.getElementsByTagName("s:Body");
+            if(bodyList.getLength() > 0){
+                Element bodyElement = (Element) bodyList.item(0);
+                NodeList responseList = bodyElement.getElementsByTagName("u:"+action+"Response");
 
-        if let Some(root) = doc.root_element().descendants().find(|node| node.tag_name().name() == "Body").unwrap()
-                .descendants().find(|node| node.tag_name().name() == format!("{}Response", action)) {
-            let mut response = HashMap::new();
+                if(responseList.getLength() > 0){
+                    Element responseElement = (Element) responseList.item(0);
 
-            let mut iter = root.descendants();
-            iter.next();
-            while let Some(node) = &iter.next() {
-                if node.is_element() {
-                    let key = node.tag_name().name().to_string();
-                    if let Some(node) = iter.next() {
-                        if node.is_text() {
-                            response.insert(key, node.text().unwrap().to_string());
+                    Map<String, String> response = new HashMap<>();
+
+                    NodeList children = responseElement.getChildNodes();
+                    for(int i = 0; i < children.getLength(); i++){
+                        Node node = children.item(i);
+
+                        if(node.getNodeType() == Node.ELEMENT_NODE){
+                            String key = node.getNodeName();
+                            String value = node.getTextContent();
+                            response.put(key, value);
                         }
                     }
+                    return response;
                 }
             }
 
-            return Ok(response);
+            String errorCode = doc.getElementsByTagName("errorCode").item(0).getTextContent();
+            String errorDescription = doc.getElementsByTagName("errorDescription").item(0).getTextContent();
+
+            throw new IOException("Error "+errorCode+": "+errorDescription);
+
+        }catch(ParserConfigurationException | SAXException e){
+            throw new IOException("Failed to parse XML", e);
         }
-
-        let error_code = doc.descendants().find(|node| node.tag_name().name() == "errorCode").unwrap().text().unwrap();
-        let error_description = doc.descendants().find(|node| node.tag_name().name() == "errorDescription").unwrap().text().unwrap();
-
-        Err(io::Error::new(io::ErrorKind::Other, format!("{}: {}", error_code, error_description)))
-        */
-        return null;
     }
 
     private static Node findNode(Node root, String... path){
