@@ -38,18 +38,18 @@ public class UPnP {
     }
 
     public boolean openPort(int port, Protocol protocol){
-        return false;
+        return gateway.openPort(port, protocol);
     }
 
     public boolean closePort(int port, Protocol protocol){
-        return false;
+        return gateway.closePort(port, protocol);
     }
 
     public boolean isMapped(int port, Protocol protocol){
-        return false;
+        return gateway.isMapped(port, protocol);
     }
 
     public InetAddress getExternalIP(){
-        return null;
+        return gateway.getExternalIP();
     }
 }
