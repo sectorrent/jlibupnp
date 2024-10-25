@@ -47,16 +47,16 @@ public class Gateway {
 
         URL url = new URL(location);
         Socket socket = new Socket(url.getHost(), url.getPort());
+        OutputStream out = socket.getOutputStream();
 
         String request = "GET "+url.getPath()+" HTTP/1.1\r\n" +
                 "Host: "+url.getHost()+"\r\n" +
                 "Content-Type: text/xml\r\n\r\n";
-        OutputStream out = socket.getOutputStream();
         out.write(request.getBytes(StandardCharsets.UTF_8));
         out.flush();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-        StringBuilder xmlContent = new StringBuilder();
+        StringBuilder xmlResponse = new StringBuilder();
         String line;
         boolean xmlStart = false;
         while((line = reader.readLine()) != null){
@@ -66,7 +66,7 @@ public class Gateway {
             }
 
             if(xmlStart){
-                xmlContent.append(line).append("\n");
+                xmlResponse.append(line).append("\n");
             }
         }
         socket.close();
@@ -74,7 +74,7 @@ public class Gateway {
         try{
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(new ByteArrayInputStream(xmlContent.toString().getBytes(StandardCharsets.UTF_8)));
+            Document doc = builder.parse(new ByteArrayInputStream(xmlResponse.toString().getBytes(StandardCharsets.UTF_8)));
 
             Node deviceNode = findNode(doc.getDocumentElement(), "device", "deviceList", "device", "deviceList", "device", "serviceList", "service");
 
@@ -92,23 +92,131 @@ public class Gateway {
         }
     }
 
-    public boolean openPort(int port, Protocol protocol){
-        return false;
+    public boolean openPort(int port, Protocol protocol)throws IOException {
+        if(port < 1 || port > 65535){
+            throw new IllegalArgumentException("Port is out of range.");
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("NewRemoteHost", "");
+        params.put("NewProtocol", protocol.value());
+        params.put("NewInternalClient", address.getHostAddress());
+        params.put("NewExternalPort", port+"");
+        params.put("NewInternalPort", port+"");
+        params.put("NewEnabled", "1");
+        params.put("NewPortMappingDescription", "UPnP");
+        params.put("NewLeaseDuration", "0");
+
+        command("AddPortMapping", params);
+        return true;
     }
 
-    public boolean closePort(int port, Protocol protocol){
-        return false;
+    public boolean closePort(int port, Protocol protocol)throws IOException {
+        if(port < 1 || port > 65535){
+            throw new IllegalArgumentException("Port is out of range.");
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("NewRemoteHost", "");
+        params.put("NewProtocol", protocol.value());
+        params.put("NewExternalPort", port+"");
+
+        command("DeletePortMapping", params);
+        return true;
     }
 
-    public boolean isMapped(int port, Protocol protocol){
-        return false;
+    public boolean isMapped(int port, Protocol protocol)throws IOException {
+        if(port < 1 || port > 65535){
+            throw new IllegalArgumentException("Port is out of range.");
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("NewRemoteHost", "");
+        params.put("NewProtocol", protocol.value());
+        params.put("NewExternalPort", port+"");
+
+        Map<String, String> response = command("GetSpecificPortMappingEntry", params);
+        return response.get("NewEnabled").equals("1");
     }
 
-    public InetAddress getExternalIP(){
-        return null;
+    public InetAddress getExternalIP()throws IOException {
+        Map<String, String> response = command("GetExternalIPAddress", null);
+        return InetAddress.getByName(response.get("NewExternalIPAddress"));
     }
 
-    public Map<String, String> command(String action, Map<String, String> params){
+    private Map<String, String> command(String action, Map<String, String> params)throws IOException {
+        StringBuilder soap = new StringBuilder("<?xml version=\"1.0\"?>\r\n" +
+            "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\" SOAP-ENV:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">" +
+            "<SOAP-ENV:Body>" +
+            "<m:"+action+" xmlns:m=\""+serviceType+"\">");
+
+        if(params != null && !params.isEmpty()){
+            for(String key : params.keySet()){
+                soap.append("<"+key+">"+params.get(key)+"</m"+key+">");
+            }
+        }
+
+        soap.append("</m:"+action+"></SOAP-ENV:Body></SOAP-ENV:Envelope>");
+
+        Socket socket = new Socket(controlUrl.getHost(), controlUrl.getPort());
+        OutputStream out = socket.getOutputStream();
+
+        String request = "GET "+controlUrl.getPath()+" HTTP/1.1\r\n" +
+                "Host: "+controlUrl.getHost()+"\r\n" +
+                "Content-Type: text/xml\r\n" +
+                "SOAPAction: \""+serviceType+"#"+action+"\"\r\n" +
+                "Content-Length: "+soap.toString().getBytes().length+"\r\n\r\n";
+        out.write(request.getBytes(StandardCharsets.UTF_8));
+        out.write(soap.toString().getBytes(StandardCharsets.UTF_8));
+        out.flush();
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+        StringBuilder response = new StringBuilder();
+        String line;
+        boolean xmlStart = false;
+        while((line = reader.readLine()) != null){
+            if(line.isEmpty()){
+                xmlStart = true;
+                continue;
+            }
+
+            if(xmlStart){
+                response.append(line).append("\n");
+            }
+        }
+        socket.close();
+
+        System.out.println(response);
+
+        /*
+        let doc = roxmltree::Document::parse(response_str.split("\r\n\r\n").last().unwrap())
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+        if let Some(root) = doc.root_element().descendants().find(|node| node.tag_name().name() == "Body").unwrap()
+                .descendants().find(|node| node.tag_name().name() == format!("{}Response", action)) {
+            let mut response = HashMap::new();
+
+            let mut iter = root.descendants();
+            iter.next();
+            while let Some(node) = &iter.next() {
+                if node.is_element() {
+                    let key = node.tag_name().name().to_string();
+                    if let Some(node) = iter.next() {
+                        if node.is_text() {
+                            response.insert(key, node.text().unwrap().to_string());
+                        }
+                    }
+                }
+            }
+
+            return Ok(response);
+        }
+
+        let error_code = doc.descendants().find(|node| node.tag_name().name() == "errorCode").unwrap().text().unwrap();
+        let error_description = doc.descendants().find(|node| node.tag_name().name() == "errorDescription").unwrap().text().unwrap();
+
+        Err(io::Error::new(io::ErrorKind::Other, format!("{}: {}", error_code, error_description)))
+        */
         return null;
     }
 
