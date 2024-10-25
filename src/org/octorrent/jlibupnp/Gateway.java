@@ -9,7 +9,7 @@ public class Gateway {
     private URL url;
     private String serviceType;
 
-    public Gateway(){
+    public Gateway(byte[] buf, int size, InetAddress address){
 
     }
 }
