@@ -3,7 +3,7 @@ jlibupnp
 
 This is a Java implementation of UPnP as a library. You can easily add this to your project.
 
-If you want to use the [Rust](https://github.com/octorrent/rlibupnp) version.
+If you want to use the [Rust](https://github.com/sectorrent/rlibupnp) version.
 
 Implementation
 -----

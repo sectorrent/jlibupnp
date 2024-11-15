@@ -1,9 +1,9 @@
-package org.octorrent.jlibupnp;
+package org.sectorrent.jlibupnp;
 
 import java.io.IOException;
 import java.net.InetAddress;
 
-import static org.octorrent.jlibupnp.Protocol.TCP;
+import static org.sectorrent.jlibupnp.Protocol.TCP;
 
 public class Main {
 

@@ -1,4 +1,4 @@
-package org.octorrent.jlibupnp;
+package org.sectorrent.jlibupnp;
 
 public enum Protocol {
 

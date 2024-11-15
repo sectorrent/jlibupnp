@@ -1,4 +1,4 @@
-package org.octorrent.jlibupnp;
+package org.sectorrent.jlibupnp;
 
 import java.io.IOException;
 import java.net.*;

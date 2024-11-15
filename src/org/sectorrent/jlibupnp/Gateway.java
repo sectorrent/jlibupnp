@@ -1,4 +1,4 @@
-package org.octorrent.jlibupnp;
+package org.sectorrent.jlibupnp;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
